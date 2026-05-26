@@ -1,0 +1,32 @@
+name: AI Builders Daily Digest
+
+on:
+  schedule:
+    # 9:30 AM Beijing time (CST) = 01:30 UTC
+    - cron: "30 1 * * *"
+  workflow_dispatch: # allow manual trigger
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: cd scripts && npm install
+
+      - name: Generate and send digest
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          FB_DELIVERY_METHOD: email
+          FB_DELIVERY_EMAIL: ${{ secrets.DELIVERY_EMAIL }}
+        run: |
+          cd scripts
+          node prepare-digest.js 2>/dev/null | node remix-digest.js 2>/dev/null | node deliver.js 2>/dev/null
