@@ -41,24 +41,24 @@ async function main() {
   const config = data.config;
   const prompts = data.prompts;
 
-  // Build system instruction from the skill prompts
+  // Build system instruction from the skill prompts, truncated for Groq free tier
   const systemPrompt = [
     prompts.digest_intro,
     prompts.summarize_tweets,
     prompts.summarize_podcast,
     prompts.summarize_blogs,
     config.language === 'zh' || config.language === 'bilingual' ? prompts.translate : '',
-  ].filter(Boolean).join('\n---\n');
+  ].filter(Boolean).join('\n---\n').slice(0, 4000);
 
   // Build user content payload
   const contentParts = [];
 
   for (const p of data.podcasts || []) {
-    // Groq free tier: 12K TPM. Transcript alone is ~27K tokens, must truncate.
-    // 20K chars ≈ 5-6K tokens, leaving room for system prompt + tweets.
-    const maxLen = 20000;
+    // Groq free tier: 12K TPM. Must truncate aggressively.
+    // 5K chars ≈ 1.2K tokens
+    const maxLen = 5000;
     const transcript = p.transcript.length > maxLen
-      ? p.transcript.slice(0, maxLen) + '\n\n[... transcript truncated to fit token limit]'
+      ? p.transcript.slice(0, maxLen) + '\n\n[... truncated]'
       : p.transcript;
     contentParts.push(`<podcast>
   name: ${p.name}
@@ -70,23 +70,25 @@ async function main() {
   }
 
   for (const b of data.x || []) {
-    const tweets = (b.tweets || []).map(t =>
-      `<tweet id="${t.id}" url="${t.url}" likes="${t.likes}" retweets="${t.retweets}">${t.text}</tweet>`
+    // Limit tweets to 5 per builder, each tweet max 280 chars
+    const tweets = (b.tweets || []).slice(0, 5).map(t =>
+      `<tweet id="${t.id}" url="${t.url}" likes="${t.likes}" retweets="${t.retweets}">${t.text.slice(0, 280)}</tweet>`
     ).join('\n');
     contentParts.push(`<builder>
   name: ${b.name}
   handle: ${b.handle}
-  bio: ${b.bio}
+  bio: ${(b.bio || '').slice(0, 150)}
   tweets: [${tweets}]
 </builder>`);
   }
 
   for (const b of data.blogs || []) {
+    const text = (b.content || b.summary || '').slice(0, 3000);
     contentParts.push(`<blog>
   name: ${b.name}
   title: ${b.title}
   url: ${b.url}
-  content: ${b.content || b.summary || ''}
+  content: ${text}
 </blog>`);
   }
 
