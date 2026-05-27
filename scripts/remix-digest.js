@@ -48,15 +48,15 @@ async function main() {
     prompts.summarize_podcast,
     prompts.summarize_blogs,
     config.language === 'zh' || config.language === 'bilingual' ? prompts.translate : '',
-  ].filter(Boolean).join('\n---\n').slice(0, 4000);
+  ].filter(Boolean).join('\n---\n').slice(0, 2000);
 
   // Build user content payload
   const contentParts = [];
 
   for (const p of data.podcasts || []) {
     // Groq free tier: 12K TPM. Must truncate aggressively.
-    // 5K chars ≈ 1.2K tokens
-    const maxLen = 5000;
+    // 2K chars ≈ 500 tokens
+    const maxLen = 2000;
     const transcript = p.transcript.length > maxLen
       ? p.transcript.slice(0, maxLen) + '\n\n[... truncated]'
       : p.transcript;
@@ -70,9 +70,9 @@ async function main() {
   }
 
   for (const b of data.x || []) {
-    // Limit tweets to 5 per builder, each tweet max 280 chars
-    const tweets = (b.tweets || []).slice(0, 5).map(t =>
-      `<tweet id="${t.id}" url="${t.url}" likes="${t.likes}" retweets="${t.retweets}">${t.text.slice(0, 280)}</tweet>`
+    // Limit to 3 tweets per builder, each max 200 chars
+    const tweets = (b.tweets || []).slice(0, 3).map(t =>
+      `<tweet id="${t.id}" url="${t.url}" likes="${t.likes}" retweets="${t.retweets}">${t.text.slice(0, 200)}</tweet>`
     ).join('\n');
     contentParts.push(`<builder>
   name: ${b.name}
@@ -114,7 +114,7 @@ ${contentParts.join('\n\n')}`;
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.7,
-      max_tokens: 8192,
+      max_tokens: 4096,
     }),
   });
 
