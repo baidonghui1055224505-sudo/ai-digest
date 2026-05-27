@@ -13,7 +13,7 @@
 //   https://aistudio.google.com/apikey
 // ============================================================================
 
-const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 
 async function main() {
   const chunks = [];
