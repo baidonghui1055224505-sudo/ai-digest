@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 
 // ============================================================================
-// Follow Builders — Groq Remix Script
+// Follow Builders — Gemini Remix Script
 // ============================================================================
-// Takes the JSON from prepare-digest.js and calls Groq API to generate
+// Takes the JSON from prepare-digest.js and calls Gemini API to generate
 // a formatted digest in the user's preferred language.
 //
 // Usage:
 //   node prepare-digest.js | node remix-digest.js
 //
-// Needs GROQ_API_KEY in environment. Get a free one at:
-//   https://console.groq.com/keys
+// Needs GEMINI_API_KEY in environment. Get a free one at:
+//   https://aistudio.google.com/apikey
 // ============================================================================
 
-const GROQ_API = 'https://api.groq.com/openai/v1/chat/completions';
+const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 async function main() {
   const chunks = [];
@@ -32,63 +32,55 @@ async function main() {
     process.exit(0);
   }
 
-  const apiKey = process.env.GROQ_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.error('GROQ_API_KEY not set');
+    console.error('GEMINI_API_KEY not set');
     process.exit(1);
   }
 
   const config = data.config;
   const prompts = data.prompts;
 
-  // Build system instruction from the skill prompts, truncated for Groq free tier
+  // Build system instruction from the skill prompts (no truncation needed — Gemini has 1M token context)
   const systemPrompt = [
     prompts.digest_intro,
     prompts.summarize_tweets,
     prompts.summarize_podcast,
     prompts.summarize_blogs,
     config.language === 'zh' || config.language === 'bilingual' ? prompts.translate : '',
-  ].filter(Boolean).join('\n---\n').slice(0, 2000);
+  ].filter(Boolean).join('\n---\n');
 
-  // Build user content payload
+  // Build user content payload — full content, no truncation
   const contentParts = [];
 
   for (const p of data.podcasts || []) {
-    // Groq free tier: 12K TPM. Must truncate aggressively.
-    // 2K chars ≈ 500 tokens
-    const maxLen = 2000;
-    const transcript = p.transcript.length > maxLen
-      ? p.transcript.slice(0, maxLen) + '\n\n[... truncated]'
-      : p.transcript;
     contentParts.push(`<podcast>
   name: ${p.name}
   title: ${p.title}
   url: ${p.url}
   published: ${p.publishedAt}
-  transcript: ${transcript}
+  transcript: ${p.transcript}
 </podcast>`);
   }
 
   for (const b of data.x || []) {
-    // Limit to 3 tweets per builder, each max 200 chars
-    const tweets = (b.tweets || []).slice(0, 3).map(t =>
-      `<tweet id="${t.id}" url="${t.url}" likes="${t.likes}" retweets="${t.retweets}">${t.text.slice(0, 200)}</tweet>`
+    const tweets = (b.tweets || []).map(t =>
+      `<tweet id="${t.id}" url="${t.url}" likes="${t.likes}" retweets="${t.retweets}">${t.text}</tweet>`
     ).join('\n');
     contentParts.push(`<builder>
   name: ${b.name}
   handle: ${b.handle}
-  bio: ${(b.bio || '').slice(0, 150)}
+  bio: ${b.bio}
   tweets: [${tweets}]
 </builder>`);
   }
 
   for (const b of data.blogs || []) {
-    const text = (b.content || b.summary || '').slice(0, 3000);
     contentParts.push(`<blog>
   name: ${b.name}
   title: ${b.title}
   url: ${b.url}
-  content: ${text}
+  content: ${b.content || b.summary || ''}
 </blog>`);
   }
 
@@ -101,34 +93,34 @@ Today's date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 
 Content:
 ${contentParts.join('\n\n')}`;
 
-  const res = await fetch(GROQ_API, {
+  const res = await fetch(`${GEMINI_API}?key=${apiKey}`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.7,
-      max_tokens: 4096,
+      systemInstruction: {
+        parts: [{ text: systemPrompt }]
+      },
+      contents: [{
+        parts: [{ text: userPrompt }]
+      }],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 8192,
+      },
     }),
   });
 
   if (!res.ok) {
     const err = await res.text();
-    console.error(`Groq API error ${res.status}: ${err}`);
+    console.error(`Gemini API error ${res.status}: ${err}`);
     process.exit(1);
   }
 
   const result = await res.json();
-  const digest = result.choices?.[0]?.message?.content;
+  const digest = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
   if (!digest) {
-    console.error('Empty response from Groq:', JSON.stringify(result));
+    console.error('Empty response from Gemini:', JSON.stringify(result));
     process.exit(1);
   }
 
