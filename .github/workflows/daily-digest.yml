@@ -21,12 +21,27 @@ jobs:
       - name: Install dependencies
         run: cd scripts && npm install
 
-      - name: Generate and send digest
+      - name: Prepare feed
+        run: |
+          cd scripts
+          node prepare-digest.js > /tmp/feed.json 2>&1
+          echo "Feed size: $(wc -c < /tmp/feed.json) bytes"
+          python3 -c "import json; d=json.load(open('/tmp/feed.json')); print(f'Podcasts: {d[\"stats\"][\"podcastEpisodes\"]}, Builders: {d[\"stats\"][\"xBuilders\"]}, Tweets: {d[\"stats\"][\"totalTweets\"]}')" 2>/dev/null || echo "Failed to parse feed JSON"
+
+      - name: Remix with Gemini
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          cd scripts
+          node remix-digest.js < /tmp/feed.json > /tmp/digest.md 2>&1
+          echo "Digest size: $(wc -c < /tmp/digest.md) bytes"
+          head -20 /tmp/digest.md || echo "DIGEST EMPTY"
+
+      - name: Deliver via email
+        env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           FB_DELIVERY_METHOD: email
           FB_DELIVERY_EMAIL: ${{ secrets.DELIVERY_EMAIL }}
         run: |
           cd scripts
-          node prepare-digest.js 2>/dev/null | node remix-digest.js 2>/dev/null | node deliver.js 2>/dev/null
+          node deliver.js --file /tmp/digest.md 2>&1
