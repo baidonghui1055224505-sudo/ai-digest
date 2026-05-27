@@ -24,9 +24,9 @@ jobs:
       - name: Prepare feed
         run: |
           cd scripts
-          node prepare-digest.js > /tmp/feed.json 2>&1
+          node prepare-digest.js > /tmp/feed.json
           echo "Feed size: $(wc -c < /tmp/feed.json) bytes"
-          python3 -c "import json; d=json.load(open('/tmp/feed.json')); print(f'Podcasts: {d[\"stats\"][\"podcastEpisodes\"]}, Builders: {d[\"stats\"][\"xBuilders\"]}, Tweets: {d[\"stats\"][\"totalTweets\"]}')" 2>/dev/null || echo "Failed to parse feed JSON"
+          python3 -c "import json; d=json.load(open('/tmp/feed.json')); print(f'Podcasts: {d[\"stats\"][\"podcastEpisodes\"]}, Builders: {d[\"stats\"][\"xBuilders\"]}, Tweets: {d[\"stats\"][\"totalTweets\"]}')" || echo "Failed to parse feed JSON"
 
       - name: Remix with Gemini
         env:
