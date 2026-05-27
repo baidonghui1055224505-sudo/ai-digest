@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 
 // ============================================================================
-// Follow Builders — DeepSeek Remix Script
+// Follow Builders — AI Remix Script
 // ============================================================================
-// Takes the JSON from prepare-digest.js and calls DeepSeek API to generate
+// Takes the JSON from prepare-digest.js and calls Gemini API to generate
 // a formatted digest in the user's preferred language.
 //
 // Usage:
 //   node prepare-digest.js | node remix-digest.js
 //
-// Needs DEEPSEEK_API_KEY in environment. Get one at:
-//   https://platform.deepseek.com/
+// Needs GEMINI_API_KEY in environment. Get one free at:
+//   https://aistudio.google.com/apikey
 // ============================================================================
 
-const DEEPSEEK_API = 'https://api.deepseek.com/chat/completions';
+const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
 async function main() {
   const chunks = [];
@@ -32,9 +32,9 @@ async function main() {
     process.exit(0);
   }
 
-  const apiKey = process.env.DEEPSEEK_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.error('DEEPSEEK_API_KEY not set');
+    console.error('GEMINI_API_KEY not set');
     process.exit(1);
   }
 
@@ -93,34 +93,31 @@ Today's date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 
 Content:
 ${contentParts.join('\n\n')}`;
 
-  const res = await fetch(DEEPSEEK_API, {
+  const res = await fetch(`${GEMINI_API}?key=${apiKey}`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'deepseek-chat',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.7,
-      max_tokens: 8192,
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ parts: [{ text: userPrompt }] }],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 8192,
+        topP: 0.95,
+      },
     }),
   });
 
   if (!res.ok) {
     const err = await res.text();
-    console.error(`DeepSeek API error ${res.status}: ${err}`);
+    console.error(`Gemini API error ${res.status}: ${err}`);
     process.exit(1);
   }
 
   const result = await res.json();
-  const digest = result.choices?.[0]?.message?.content;
+  const digest = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
   if (!digest) {
-    console.error('Empty response from DeepSeek:', JSON.stringify(result));
+    console.error('Empty response from Gemini:', JSON.stringify(result));
     process.exit(1);
   }
 
