@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 
 // ============================================================================
-// Follow Builders — Gemini Remix Script
+// Follow Builders — DeepSeek Remix Script
 // ============================================================================
-// Takes the JSON from prepare-digest.js and calls Gemini API to generate
+// Takes the JSON from prepare-digest.js and calls DeepSeek API to generate
 // a formatted digest in the user's preferred language.
 //
 // Usage:
 //   node prepare-digest.js | node remix-digest.js
 //
-// Needs GEMINI_API_KEY in environment. Get one free at:
-//   https://aistudio.google.com/apikey
+// Needs DEEPSEEK_API_KEY in environment. Get one at:
+//   https://platform.deepseek.com/
 // ============================================================================
 
-const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const DEEPSEEK_API = 'https://api.deepseek.com/chat/completions';
 
 async function main() {
   const chunks = [];
@@ -32,9 +32,9 @@ async function main() {
     process.exit(0);
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
-    console.error('GEMINI_API_KEY not set');
+    console.error('DEEPSEEK_API_KEY not set');
     process.exit(1);
   }
 
@@ -53,7 +53,6 @@ async function main() {
   // Build user content payload
   const contentParts = [];
 
-  // Podcasts
   for (const p of data.podcasts || []) {
     contentParts.push(`<podcast>
   name: ${p.name}
@@ -64,7 +63,6 @@ async function main() {
 </podcast>`);
   }
 
-  // X/Twitter builders
   for (const b of data.x || []) {
     const tweets = (b.tweets || []).map(t =>
       `<tweet id="${t.id}" url="${t.url}" likes="${t.likes}" retweets="${t.retweets}">${t.text}</tweet>`
@@ -77,7 +75,6 @@ async function main() {
 </builder>`);
   }
 
-  // Blogs
   for (const b of data.blogs || []) {
     contentParts.push(`<blog>
   name: ${b.name}
@@ -96,32 +93,34 @@ Today's date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 
 Content:
 ${contentParts.join('\n\n')}`;
 
-  // Call Gemini
-  const res = await fetch(`${GEMINI_API}?key=${apiKey}`, {
+  const res = await fetch(DEEPSEEK_API, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      contents: [{ parts: [{ text: userPrompt }] }],
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 8192,
-        topP: 0.95,
-      },
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.7,
+      max_tokens: 8192,
     }),
   });
 
   if (!res.ok) {
     const err = await res.text();
-    console.error(`Gemini API error ${res.status}: ${err}`);
+    console.error(`DeepSeek API error ${res.status}: ${err}`);
     process.exit(1);
   }
 
   const result = await res.json();
-  const digest = result.candidates?.[0]?.content?.parts?.[0]?.text;
+  const digest = result.choices?.[0]?.message?.content;
 
   if (!digest) {
-    console.error('Empty response from Gemini:', JSON.stringify(result));
+    console.error('Empty response from DeepSeek:', JSON.stringify(result));
     process.exit(1);
   }
 
