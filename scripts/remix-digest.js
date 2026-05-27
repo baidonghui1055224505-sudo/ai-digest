@@ -54,12 +54,18 @@ async function main() {
   const contentParts = [];
 
   for (const p of data.podcasts || []) {
+    // Groq free tier: 12K TPM. Transcript alone is ~27K tokens, must truncate.
+    // 20K chars ≈ 5-6K tokens, leaving room for system prompt + tweets.
+    const maxLen = 20000;
+    const transcript = p.transcript.length > maxLen
+      ? p.transcript.slice(0, maxLen) + '\n\n[... transcript truncated to fit token limit]'
+      : p.transcript;
     contentParts.push(`<podcast>
   name: ${p.name}
   title: ${p.title}
   url: ${p.url}
   published: ${p.publishedAt}
-  transcript: ${p.transcript}
+  transcript: ${transcript}
 </podcast>`);
   }
 
