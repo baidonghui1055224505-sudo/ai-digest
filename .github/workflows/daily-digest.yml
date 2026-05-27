@@ -33,9 +33,9 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           cd scripts
-          node remix-digest.js < /tmp/feed.json > /tmp/digest.md 2>&1
+          node remix-digest.js < /tmp/feed.json > /tmp/digest.md
           echo "Digest size: $(wc -c < /tmp/digest.md) bytes"
-          head -20 /tmp/digest.md || echo "DIGEST EMPTY"
+          head -5 /tmp/digest.md
 
       - name: Deliver via email
         env:
