@@ -28,9 +28,9 @@ jobs:
           echo "Feed size: $(wc -c < /tmp/feed.json) bytes"
           python3 -c "import json; d=json.load(open('/tmp/feed.json')); print(f'Podcasts: {d[\"stats\"][\"podcastEpisodes\"]}, Builders: {d[\"stats\"][\"xBuilders\"]}, Tweets: {d[\"stats\"][\"totalTweets\"]}')" || echo "Failed to parse feed JSON"
 
-      - name: Remix with Gemini
+      - name: Remix with Groq
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           cd scripts
           node remix-digest.js < /tmp/feed.json > /tmp/digest.md
