@@ -58,7 +58,7 @@ async function fetchText(url) {
 async function main() {
   const errors = [];
 
-  // 1. Read user config
+  // 1. Read user config (env vars override for CI/CD)
   let config = {
     language: 'en',
     frequency: 'daily',
@@ -71,6 +71,9 @@ async function main() {
       errors.push(`Could not read config: ${err.message}`);
     }
   }
+  // Env var overrides for CI/CD (GitHub Actions)
+  if (process.env.FB_LANGUAGE) config.language = process.env.FB_LANGUAGE;
+  if (process.env.FB_FREQUENCY) config.frequency = process.env.FB_FREQUENCY;
 
   // 2. Fetch all three feeds
   const [feedX, feedPodcasts, feedBlogs] = await Promise.all([

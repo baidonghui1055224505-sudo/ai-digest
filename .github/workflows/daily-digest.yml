@@ -22,6 +22,8 @@ jobs:
         run: cd scripts && npm install
 
       - name: Prepare feed
+        env:
+          FB_LANGUAGE: zh
         run: |
           cd scripts
           node prepare-digest.js > /tmp/feed.json
