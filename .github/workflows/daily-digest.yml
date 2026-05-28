@@ -1,10 +1,8 @@
 name: AI Builders Daily Digest
 
 on:
-  schedule:
-    # 9:30 AM Beijing time (CST) = 01:30 UTC
-    - cron: "30 1 * * *"
-  workflow_dispatch: # allow manual trigger
+  # Scheduled via cron-job.org -> GitHub API (more reliable than GitHub's built-in cron)
+  workflow_dispatch:
 
 jobs:
   digest:
