@@ -4,27 +4,30 @@
 // Follow Builders — Prepare Digest
 // ============================================================================
 // Gathers everything the LLM needs to produce a digest:
-// - Fetches the central feeds (tweets + podcasts)
+// - Fetches the central feeds (tweets + podcasts + blogs)
 // - Fetches the latest prompts from GitHub
-// - Reads the user's config (language, delivery method)
+// - Supports --user <id> for multi-user mode (reads users/<id>.json)
 // - Outputs a single JSON blob to stdout
 //
-// The LLM's ONLY job is to read this JSON, remix the content, and output
-// the digest text. Everything else is handled here deterministically.
-//
-// Usage: node prepare-digest.js
-// Output: JSON to stdout
+// Usage:
+//   node prepare-digest.js                 # single-user: ~/.follow-builders/config.json
+//   node prepare-digest.js --user xiaoming  # multi-user: users/xiaoming.json
 // ============================================================================
 
 import { readFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { homedir } from 'os';
 
 // -- Constants ---------------------------------------------------------------
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = join(__dirname, '..');
+
 const USER_DIR = join(homedir(), '.follow-builders');
 const CONFIG_PATH = join(USER_DIR, 'config.json');
+const USERS_DIR = join(REPO_ROOT, 'users');
 
 const FEED_X_URL = 'https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-x.json';
 const FEED_PODCASTS_URL = 'https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-podcasts.json';
@@ -38,6 +41,14 @@ const PROMPT_FILES = [
   'digest-intro.md',
   'translate.md'
 ];
+
+// -- CLI arg parsing ---------------------------------------------------------
+
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const userId = args.indexOf('--user') !== -1 ? args[args.indexOf('--user') + 1] : null;
+  return { userId };
+}
 
 // -- Fetch helpers -----------------------------------------------------------
 
@@ -53,27 +64,76 @@ async function fetchText(url) {
   return res.text();
 }
 
+// -- User config loading -----------------------------------------------------
+
+async function loadUserConfig(userId) {
+  if (!userId) {
+    // Legacy single-user mode
+    let config = {
+      language: 'en',
+      frequency: 'daily',
+      delivery: { method: 'stdout' }
+    };
+    if (existsSync(CONFIG_PATH)) {
+      config = JSON.parse(await readFile(CONFIG_PATH, 'utf-8'));
+    }
+    if (process.env.FB_LANGUAGE) config.language = process.env.FB_LANGUAGE;
+    return { config, sources: null };
+  }
+
+  // Multi-user mode: read from users/<id>.json
+  const userPath = join(USERS_DIR, `${userId}.json`);
+  if (!existsSync(userPath)) {
+    throw new Error(`User config not found: ${userPath}`);
+  }
+  const userData = JSON.parse(await readFile(userPath, 'utf-8'));
+  const config = {
+    language: userData.language || 'zh',
+    frequency: 'daily',
+    delivery: { method: 'email', email: userData.email }
+  };
+  return { config, sources: userData.sources || null };
+}
+
+// -- Source filtering --------------------------------------------------------
+
+function filterContent(feedX, feedPodcasts, feedBlogs, sources) {
+  // If no sources specified or "all", return everything
+  if (!sources) {
+    return {
+      podcasts: feedPodcasts?.podcasts || [],
+      x: feedX?.x || [],
+      blogs: feedBlogs?.blogs || []
+    };
+  }
+
+  const isAll = (arr) => !arr || arr.length === 0 || arr.includes('all');
+
+  const podcasts = feedPodcasts?.podcasts || [];
+  const xBuilders = feedX?.x || [];
+  const blogs = feedBlogs?.blogs || [];
+
+  return {
+    podcasts: isAll(sources.podcasts)
+      ? podcasts
+      : podcasts.filter(p => sources.podcasts.includes(p.name)),
+    x: isAll(sources.xBuilders)
+      ? xBuilders
+      : xBuilders.filter(b => sources.xBuilders.includes(b.handle)),
+    blogs: isAll(sources.blogs)
+      ? blogs
+      : blogs.filter(b => sources.blogs.includes(b.name))
+  };
+}
+
 // -- Main --------------------------------------------------------------------
 
 async function main() {
   const errors = [];
+  const { userId } = parseArgs();
 
-  // 1. Read user config (env vars override for CI/CD)
-  let config = {
-    language: 'en',
-    frequency: 'daily',
-    delivery: { method: 'stdout' }
-  };
-  if (existsSync(CONFIG_PATH)) {
-    try {
-      config = JSON.parse(await readFile(CONFIG_PATH, 'utf-8'));
-    } catch (err) {
-      errors.push(`Could not read config: ${err.message}`);
-    }
-  }
-  // Env var overrides for CI/CD (GitHub Actions)
-  if (process.env.FB_LANGUAGE) config.language = process.env.FB_LANGUAGE;
-  if (process.env.FB_FREQUENCY) config.frequency = process.env.FB_FREQUENCY;
+  // 1. Load user config
+  const { config, sources } = await loadUserConfig(userId);
 
   // 2. Fetch all three feeds
   const [feedX, feedPodcasts, feedBlogs] = await Promise.all([
@@ -86,12 +146,7 @@ async function main() {
   if (!feedPodcasts) errors.push('Could not fetch podcast feed');
   if (!feedBlogs) errors.push('Could not fetch blog feed');
 
-  // 3. Load prompts with priority: user custom > remote (GitHub) > local default
-  //
-  // If the user has a custom prompt at ~/.follow-builders/prompts/<file>,
-  // use that (they personalized it — don't overwrite with remote updates).
-  // Otherwise, fetch the latest from GitHub so they get central improvements.
-  // If GitHub is unreachable, fall back to the local copy shipped with the skill.
+  // 3. Load prompts
   const prompts = {};
   const scriptDir = decodeURIComponent(new URL('.', import.meta.url).pathname);
   const localPromptsDir = join(scriptDir, '..', 'prompts');
@@ -102,20 +157,17 @@ async function main() {
     const userPath = join(userPromptsDir, filename);
     const localPath = join(localPromptsDir, filename);
 
-    // Priority 1: user's custom prompt (they personalized it)
     if (existsSync(userPath)) {
       prompts[key] = await readFile(userPath, 'utf-8');
       continue;
     }
 
-    // Priority 2: latest from GitHub (central updates)
     const remote = await fetchText(`${PROMPTS_BASE}/${filename}`);
     if (remote) {
       prompts[key] = remote;
       continue;
     }
 
-    // Priority 3: local copy shipped with the skill
     if (existsSync(localPath)) {
       prompts[key] = await readFile(localPath, 'utf-8');
     } else {
@@ -123,36 +175,34 @@ async function main() {
     }
   }
 
-  // 4. Build the output — everything the LLM needs in one blob
+  // 4. Filter content per user
+  const { podcasts, x, blogs } = filterContent(feedX, feedPodcasts, feedBlogs, sources);
+
+  // 5. Build output
   const output = {
     status: 'ok',
     generatedAt: new Date().toISOString(),
+    userId: userId || 'default',
 
-    // User preferences
     config: {
       language: config.language || 'en',
       frequency: config.frequency || 'daily',
       delivery: config.delivery || { method: 'stdout' }
     },
 
-    // Content to remix
-    podcasts: feedPodcasts?.podcasts || [],
-    x: feedX?.x || [],
-    blogs: feedBlogs?.blogs || [],
+    podcasts,
+    x,
+    blogs,
 
-    // Stats for the LLM to reference
     stats: {
-      podcastEpisodes: feedPodcasts?.podcasts?.length || 0,
-      xBuilders: feedX?.x?.length || 0,
-      totalTweets: (feedX?.x || []).reduce((sum, a) => sum + a.tweets.length, 0),
-      blogPosts: feedBlogs?.blogs?.length || 0,
+      podcastEpisodes: podcasts.length,
+      xBuilders: x.length,
+      totalTweets: x.reduce((sum, a) => sum + (a.tweets?.length || 0), 0),
+      blogPosts: blogs.length,
       feedGeneratedAt: feedX?.generatedAt || feedPodcasts?.generatedAt || feedBlogs?.generatedAt || null
     },
 
-    // Prompts — the LLM reads these and follows the instructions
     prompts,
-
-    // Non-fatal errors
     errors: errors.length > 0 ? errors : undefined
   };
 

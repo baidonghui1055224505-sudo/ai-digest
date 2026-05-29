@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 信息管家 — 每天准时到邮箱</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #0f0f1a 0%, #1a1a3e 50%, #0d0d2b 100%);
+      color: #e0e0e0;
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+    .container { max-width: 720px; margin: 0 auto; padding: 60px 24px; }
+    .hero { text-align: center; margin-bottom: 48px; }
+    .hero h1 {
+      font-size: 2.4em;
+      background: linear-gradient(90deg, #60a5fa, #a78bfa, #f472b6);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 16px;
+    }
+    .hero p { font-size: 1.15em; color: #94a3b8; max-width: 500px; margin: 0 auto; }
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 48px; }
+    .step {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+    }
+    .step .num {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 12px;
+      font-weight: bold;
+      font-size: 1.1em;
+    }
+    .step h3 { font-size: 1em; margin-bottom: 6px; color: #cbd5e1; }
+    .step p { font-size: 0.85em; color: #64748b; }
+    .features { margin-bottom: 48px; }
+    .features h2 { text-align: center; margin-bottom: 24px; font-size: 1.4em; }
+    .feature-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .feature-item {
+      background: rgba(255,255,255,0.03);
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 0.95em;
+    }
+    .feature-item .icon { margin-right: 8px; }
+    .cta {
+      text-align: center;
+      background: rgba(99,102,241,0.1);
+      border: 1px solid rgba(99,102,241,0.3);
+      border-radius: 16px;
+      padding: 40px 24px;
+    }
+    .cta h2 { margin-bottom: 12px; }
+    .cta p { color: #94a3b8; margin-bottom: 24px; }
+    .btn {
+      display: inline-block;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white;
+      padding: 14px 40px;
+      border-radius: 50px;
+      text-decoration: none;
+      font-size: 1.1em;
+      font-weight: 600;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(99,102,241,0.3); }
+    .footer { text-align: center; margin-top: 48px; color: #475569; font-size: 0.85em; }
+    .badge {
+      display: inline-block;
+      background: rgba(34,197,94,0.15);
+      color: #4ade80;
+      padding: 4px 12px;
+      border-radius: 50px;
+      font-size: 0.8em;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 600px) {
+      .steps, .feature-list { grid-template-columns: 1fr; }
+      .hero h1 { font-size: 1.8em; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="hero">
+      <div class="badge">🚀 内测中 · 限 5 个名额</div>
+      <h1>AI 信息管家</h1>
+      <p>选你想跟踪的博主和播客，AI 帮你整理成中文摘要。<br>每天 9:30 准时送到邮箱。</p>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <h3>选择信息源</h3>
+        <p>从 AI 行业顶级博主、播客、博客中选你感兴趣的</p>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <h3>AI 自动整理</h3>
+        <p>每天自动抓取最新内容，AI 翻译成中文并生成摘要</p>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <h3>准时到邮箱</h3>
+        <p>每天早上 9:30，一份清爽的文摘准时到达你的收件箱</p>
+      </div>
+    </div>
+
+    <div class="features">
+      <h2>你能跟踪的内容</h2>
+      <div class="feature-list">
+        <div class="feature-item">
+          <span class="icon">🐦</span> <strong>X/Twitter 博主</strong> — 跟踪 AI 行业顶尖 builders 的最新推文
+        </div>
+        <div class="feature-item">
+          <span class="icon">🎙️</span> <strong>播客节目</strong> — AI 领域热门播客的文字转录+总结
+        </div>
+        <div class="feature-item">
+          <span class="icon">📝</span> <strong>官方博客</strong> — OpenAI、Anthropic 等 AI 公司最新文章
+        </div>
+        <div class="feature-item">
+          <span class="icon">🌐</span> <strong>中文摘要</strong> — 所有内容翻译成自然流畅的中文，附带原文链接
+        </div>
+      </div>
+    </div>
+
+    <div class="cta">
+      <h2>内测开放中</h2>
+      <p>目前仅开放 5 个内测名额，完全免费。<br>填表后 24 小时内开通，第二天早上 9:30 开始收到第一封文摘。</p>
+      <a href="https://docs.google.com/forms/d/e/YOUR_FORM_ID/viewform" class="btn" target="_blank">
+        申请内测 →
+      </a>
+    </div>
+
+    <div class="footer">
+      由 AI 驱动 · 每天自动运行 · 无需安装任何东西
+    </div>
+  </div>
+</body>
+</html>

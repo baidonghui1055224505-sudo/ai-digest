@@ -1,13 +1,15 @@
 name: AI Builders Daily Digest
 
 on:
-  # Scheduled via cron-job.org -> GitHub API (more reliable than GitHub's built-in cron)
+  schedule:
+    # 9:30 AM Beijing time (CST) = 01:30 UTC
+    - cron: "30 1 * * *"
   workflow_dispatch:
 
 jobs:
   digest:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -19,29 +21,50 @@ jobs:
       - name: Install dependencies
         run: cd scripts && npm install
 
-      - name: Prepare feed
-        env:
-          FB_LANGUAGE: zh
-        run: |
-          cd scripts
-          node prepare-digest.js > /tmp/feed.json
-          echo "Feed size: $(wc -c < /tmp/feed.json) bytes"
-          python3 -c "import json; d=json.load(open('/tmp/feed.json')); print(f'Podcasts: {d[\"stats\"][\"podcastEpisodes\"]}, Builders: {d[\"stats\"][\"xBuilders\"]}, Tweets: {d[\"stats\"][\"totalTweets\"]}')" || echo "Failed to parse feed JSON"
-
-      - name: Remix with Gemini
+      - name: Send digests for all users
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          cd scripts
-          node remix-digest.js < /tmp/feed.json > /tmp/digest.md
-          echo "Digest size: $(wc -c < /tmp/digest.md) bytes"
-          head -5 /tmp/digest.md
-
-      - name: Deliver via email
-        env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          FB_DELIVERY_METHOD: email
-          FB_DELIVERY_EMAIL: ${{ secrets.DELIVERY_EMAIL }}
         run: |
           cd scripts
-          node deliver.js --file /tmp/digest.md 2>&1
+
+          # Find all user config files
+          USER_FILES=$(ls ../users/*.json 2>/dev/null || echo "")
+          if [ -z "$USER_FILES" ]; then
+            echo "No user configs found in users/"
+            exit 0
+          fi
+
+          for USER_FILE in $USER_FILES; do
+            USER_ID=$(basename "$USER_FILE" .json)
+            USER_EMAIL=$(python3 -c "import json; print(json.load(open('$USER_FILE'))['email'])")
+            echo ""
+            echo "========== Processing user: $USER_ID ($USER_EMAIL) =========="
+
+            # Step 1: Prepare personalized feed
+            node prepare-digest.js --user "$USER_ID" > /tmp/feed-$USER_ID.json 2>/tmp/prep-err-$USER_ID.txt
+            if [ $? -ne 0 ]; then
+              echo "ERROR: prepare failed for $USER_ID"
+              cat /tmp/prep-err-$USER_ID.txt
+              continue
+            fi
+            echo "Feed prepared: $(wc -c < /tmp/feed-$USER_ID.json) bytes"
+
+            # Step 2: Remix with Gemini
+            node remix-digest.js < /tmp/feed-$USER_ID.json > /tmp/digest-$USER_ID.md 2>/tmp/remix-err-$USER_ID.txt
+            if [ $? -ne 0 ]; then
+              echo "ERROR: remix failed for $USER_ID"
+              cat /tmp/remix-err-$USER_ID.txt
+              continue
+            fi
+            echo "Digest generated: $(wc -c < /tmp/digest-$USER_ID.md) bytes"
+            head -3 /tmp/digest-$USER_ID.md
+
+            # Step 3: Deliver via email
+            FB_DELIVERY_METHOD=email FB_DELIVERY_EMAIL="$USER_EMAIL" \
+              node deliver.js --file /tmp/digest-$USER_ID.md 2>&1
+            echo "Sent to $USER_EMAIL"
+          done
+
+          echo ""
+          echo "========== All users processed =========="

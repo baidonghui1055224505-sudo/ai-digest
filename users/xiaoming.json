@@ -1,0 +1,11 @@
+{
+  "email": "yeximing711@gmail.com",
+  "name": "小明",
+  "language": "zh",
+  "sources": {
+    "podcasts": ["all"],
+    "blogs": ["all"],
+    "xBuilders": ["all"]
+  },
+  "createdAt": "2026-05-29"
+}
