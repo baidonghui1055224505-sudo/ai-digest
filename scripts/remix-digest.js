@@ -13,6 +13,8 @@
 //   https://aistudio.google.com/apikey
 // ============================================================================
 
+import { postJSON } from './lib/fetch.js';
+
 const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 async function main() {
@@ -27,8 +29,9 @@ async function main() {
     process.exit(1);
   }
 
-  if (data.stats.podcastEpisodes === 0 && data.stats.xBuilders === 0) {
-    console.log('No new updates from builders today.');
+  const totalCustomItems = (data.customFeeds || []).reduce((sum, f) => sum + f.items.length, 0);
+  if (data.stats.podcastEpisodes === 0 && data.stats.xBuilders === 0 && totalCustomItems === 0) {
+    console.log('No new updates today.');
     process.exit(0);
   }
 
@@ -84,6 +87,15 @@ async function main() {
 </blog>`);
   }
 
+  for (const feed of data.customFeeds || []) {
+    const items = (feed.items || []).map(item =>
+      `<item title="${item.title}" url="${item.url}" published="${item.published}">${item.summary}</item>`
+    ).join('\n');
+    contentParts.push(`<rss-feed name="${feed.name}" url="${feed.url}">
+  ${items}
+</rss-feed>`);
+  }
+
   const userPrompt = `Generate the AI Builders Digest from the following content.
 
 Language: ${config.language === 'zh' ? 'Chinese (simplified, natural Mandarin)' : config.language === 'bilingual' ? 'Bilingual (interleave English and Chinese paragraph by paragraph)' : 'English'}
@@ -93,30 +105,19 @@ Today's date: ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 
 Content:
 ${contentParts.join('\n\n')}`;
 
-  const res = await fetch(`${GEMINI_API}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [{ text: systemPrompt }]
-      },
-      contents: [{
-        parts: [{ text: userPrompt }]
-      }],
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 8192,
-      },
-    }),
+  const result = await postJSON(`${GEMINI_API}?key=${apiKey}`, {
+    systemInstruction: {
+      parts: [{ text: systemPrompt }]
+    },
+    contents: [{
+      parts: [{ text: userPrompt }]
+    }],
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 8192,
+    },
   });
 
-  if (!res.ok) {
-    const err = await res.text();
-    console.error(`Gemini API error ${res.status}: ${err}`);
-    process.exit(1);
-  }
-
-  const result = await res.json();
   const digest = result.candidates?.[0]?.content?.parts?.[0]?.text;
 
   if (!digest) {

@@ -7,5 +7,15 @@
     "blogs": ["all"],
     "xBuilders": ["all"]
   },
+  "customRss": [
+    {
+      "name": "OpenAI Blog",
+      "url": "https://openai.com/blog/rss.xml"
+    },
+    {
+      "name": "Anthropic Blog",
+      "url": "https://www.anthropic.com/blog/rss.xml"
+    }
+  ],
   "createdAt": "2026-05-29"
 }

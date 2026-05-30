@@ -19,6 +19,7 @@ import { existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { homedir } from 'os';
+import { getJSON, getText } from './lib/fetch.js';
 
 // -- Constants ---------------------------------------------------------------
 
@@ -50,18 +51,39 @@ function parseArgs() {
   return { userId };
 }
 
-// -- Fetch helpers -----------------------------------------------------------
+// -- RSS feed fetcher (uses proxy-aware fetch helper) -----------------------
 
-async function fetchJSON(url) {
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  return res.json();
-}
+async function fetchRSS(url) {
+  let xml;
+  try { xml = await getText(url); } catch { return null; }
+  if (!xml) return null;
 
-async function fetchText(url) {
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  return res.text();
+  // Extract channel/title
+  const channelTitle = (xml.match(/<title>([^<]+)<\/title>/) || [])[1] || url;
+
+  // Extract items: <item>...</item> blocks
+  const itemBlocks = xml.match(/<item>[\s\S]*?<\/item>/gi) || [];
+  const items = [];
+
+  for (const block of itemBlocks.slice(0, 10)) { // max 10 items per feed
+    const title = (block.match(/<title>([\s\S]*?)<\/title>/i) || [])[1] || '';
+    const link = (block.match(/<link>([\s\S]*?)<\/link>/i) || [])[1] || '';
+    const pubDate = (block.match(/<pubDate>([\s\S]*?)<\/pubDate>/i) || [])[1] || '';
+    // Strip CDATA and HTML tags from description
+    let desc = (block.match(/<description>([\s\S]*?)<\/description>/i) || [])[1] || '';
+    desc = desc.replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, '').slice(0, 1000);
+
+    if (title || link) {
+      items.push({
+        title: title.replace(/<!\[CDATA\[|\]\]>/g, '').trim(),
+        url: link.trim(),
+        published: pubDate.trim(),
+        summary: desc.trim()
+      });
+    }
+  }
+
+  return { name: channelTitle, url, items };
 }
 
 // -- User config loading -----------------------------------------------------
@@ -92,7 +114,7 @@ async function loadUserConfig(userId) {
     frequency: 'daily',
     delivery: { method: 'email', email: userData.email }
   };
-  return { config, sources: userData.sources || null };
+  return { config, sources: userData.sources || null, customRss: userData.customRss || [] };
 }
 
 // -- Source filtering --------------------------------------------------------
@@ -133,14 +155,25 @@ async function main() {
   const { userId } = parseArgs();
 
   // 1. Load user config
-  const { config, sources } = await loadUserConfig(userId);
+  const { config, sources, customRss } = await loadUserConfig(userId);
 
-  // 2. Fetch all three feeds
+  // 2. Fetch all three feeds + custom RSS
   const [feedX, feedPodcasts, feedBlogs] = await Promise.all([
-    fetchJSON(FEED_X_URL),
-    fetchJSON(FEED_PODCASTS_URL),
-    fetchJSON(FEED_BLOGS_URL)
+    getJSON(FEED_X_URL).catch(() => null),
+    getJSON(FEED_PODCASTS_URL).catch(() => null),
+    getJSON(FEED_BLOGS_URL).catch(() => null)
   ]);
+
+  // Fetch custom RSS feeds in parallel
+  const customFeeds = (await Promise.all(
+    (customRss || []).map(async (feed) => {
+      try {
+        return await fetchRSS(feed.url) || { name: feed.name, url: feed.url, items: [], error: 'Failed to fetch' };
+      } catch (e) {
+        return { name: feed.name, url: feed.url, items: [], error: e.message };
+      }
+    })
+  )).filter(f => f.items.length > 0);
 
   if (!feedX) errors.push('Could not fetch tweet feed');
   if (!feedPodcasts) errors.push('Could not fetch podcast feed');
@@ -162,7 +195,8 @@ async function main() {
       continue;
     }
 
-    const remote = await fetchText(`${PROMPTS_BASE}/${filename}`);
+    let remote;
+    try { remote = await getText(`${PROMPTS_BASE}/${filename}`); } catch { remote = null; }
     if (remote) {
       prompts[key] = remote;
       continue;
@@ -193,12 +227,14 @@ async function main() {
     podcasts,
     x,
     blogs,
+    customFeeds,
 
     stats: {
       podcastEpisodes: podcasts.length,
       xBuilders: x.length,
       totalTweets: x.reduce((sum, a) => sum + (a.tweets?.length || 0), 0),
       blogPosts: blogs.length,
+      customFeedItems: customFeeds.reduce((sum, f) => sum + f.items.length, 0),
       feedGeneratedAt: feedX?.generatedAt || feedPodcasts?.generatedAt || feedBlogs?.generatedAt || null
     },
 
