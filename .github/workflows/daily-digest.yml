@@ -2,8 +2,10 @@ name: AI Builders Daily Digest
 
 on:
   schedule:
-    # 9:30 AM Beijing time (CST) = 01:30 UTC
-    - cron: "30 1 * * *"
+    # GitHub free tier delays scheduled jobs by ~4 hours.
+    # To hit 9:00 AM Beijing (01:00 UTC), set cron to 21:00 UTC the day before.
+    # 21:00 UTC + ~4h delay = ~01:00 UTC = ~9:00 AM Beijing.
+    - cron: "0 21 * * *"
   workflow_dispatch:
 
 jobs:
