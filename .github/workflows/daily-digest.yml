@@ -2,10 +2,9 @@ name: AI Builders Daily Digest
 
 on:
   schedule:
-    # GitHub free tier delays scheduled jobs by ~4 hours.
-    # To hit 9:00 AM Beijing (01:00 UTC), set cron to 21:00 UTC the day before.
-    # 21:00 UTC + ~4h delay = ~01:00 UTC = ~9:00 AM Beijing.
-    - cron: "0 21 * * *"
+    # 每15分钟检查一次北京时间，只在8:55-9:10之间执行
+    # 短间隔比单次定时更可靠，不会被延迟到下午
+    - cron: "*/15 0-2 * * *"
   workflow_dispatch:
 
 jobs:
@@ -14,23 +13,42 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      - name: 检查是否到发送时间（北京时间9:00前后）
+        id: check
+        run: |
+          BJ_HOUR=$(TZ='Asia/Shanghai' date +%H)
+          BJ_MINUTE=$(TZ='Asia/Shanghai' date +%M)
+          echo "北京时间: ${BJ_HOUR}:${BJ_MINUTE}"
+          # 只在 8:55 - 9:10 之间执行
+          if [ "$BJ_HOUR" = "08" ] && [ "$BJ_MINUTE" -ge 55 ]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          elif [ "$BJ_HOUR" = "09" ] && [ "$BJ_MINUTE" -le 10 ]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            echo "不在时间窗口内，跳过"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.check.outputs.should_run == 'true'
 
       - uses: actions/setup-node@v4
+        if: steps.check.outputs.should_run == 'true'
         with:
           node-version: "20"
 
       - name: Install dependencies
+        if: steps.check.outputs.should_run == 'true'
         run: cd scripts && npm install
 
-      - name: Send digests for all users
+      - name: 生成并发送文摘
+        if: steps.check.outputs.should_run == 'true'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
           cd scripts
 
-          # Find all user config files
           USER_FILES=$(ls ../users/*.json 2>/dev/null || echo "")
           if [ -z "$USER_FILES" ]; then
             echo "No user configs found in users/"
@@ -41,32 +59,23 @@ jobs:
             USER_ID=$(basename "$USER_FILE" .json)
             USER_EMAIL=$(python3 -c "import json; print(json.load(open('$USER_FILE'))['email'])")
             echo ""
-            echo "========== Processing user: $USER_ID ($USER_EMAIL) =========="
+            echo "========== $USER_ID ($USER_EMAIL) =========="
 
-            # Step 1: Prepare personalized feed
-            node prepare-digest.js --user "$USER_ID" > /tmp/feed-$USER_ID.json 2>/tmp/prep-err-$USER_ID.txt
+            node prepare-digest.js --user "$USER_ID" > /tmp/feed-$USER_ID.json 2>/tmp/prep-err.txt
             if [ $? -ne 0 ]; then
-              echo "ERROR: prepare failed for $USER_ID"
-              cat /tmp/prep-err-$USER_ID.txt
-              continue
+              echo "ERROR: prepare failed"; cat /tmp/prep-err.txt; continue
             fi
-            echo "Feed prepared: $(wc -c < /tmp/feed-$USER_ID.json) bytes"
+            echo "Feed: $(wc -c < /tmp/feed-$USER_ID.json) bytes"
 
-            # Step 2: Remix with Gemini
-            node remix-digest.js < /tmp/feed-$USER_ID.json > /tmp/digest-$USER_ID.md 2>/tmp/remix-err-$USER_ID.txt
+            node remix-digest.js < /tmp/feed-$USER_ID.json > /tmp/digest-$USER_ID.md 2>/tmp/remix-err.txt
             if [ $? -ne 0 ]; then
-              echo "ERROR: remix failed for $USER_ID"
-              cat /tmp/remix-err-$USER_ID.txt
-              continue
+              echo "ERROR: remix failed"; cat /tmp/remix-err.txt; continue
             fi
-            echo "Digest generated: $(wc -c < /tmp/digest-$USER_ID.md) bytes"
+            echo "Digest: $(wc -c < /tmp/digest-$USER_ID.md) bytes"
             head -3 /tmp/digest-$USER_ID.md
 
-            # Step 3: Deliver via email
             FB_DELIVERY_METHOD=email FB_DELIVERY_EMAIL="$USER_EMAIL" \
               node deliver.js --file /tmp/digest-$USER_ID.md 2>&1
-            echo "Sent to $USER_EMAIL"
+            echo "✅ 已发送"
           done
-
-          echo ""
-          echo "========== All users processed =========="
+          echo "========== 完成 =========="
