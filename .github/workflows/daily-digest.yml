@@ -2,14 +2,10 @@ name: AI Builders Daily Digest
 
 on:
   schedule:
-    # 5个触发点分布在UTC 21:00-23:00，利用GitHub的随机延迟
-    # 延迟2-5小时后刚好落在北京时间9:00前后
-    # 配合作流内的北京时间检查，只有命中窗口的才会真正执行
-    - cron: "0 21 * * *"
-    - cron: "30 21 * * *"
-    - cron: "0 22 * * *"
-    - cron: "30 22 * * *"
-    - cron: "0 23 * * *"
+    # 每5分钟检查一次（全天），配合作流内北京时间判断
+    # 只有命中北京时间 8:45-9:15 窗口的才会真正执行
+    # 等于288次/天的触发机会，覆盖所有随机延迟
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -18,21 +14,44 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: 检查是否到发送时间（北京时间9:00前后）
+      - name: 检查北京时间 + 今天是否已发过
         id: check
         run: |
-          BJ_HOUR=$(TZ='Asia/Shanghai' date +%H)
-          BJ_MINUTE=$(TZ='Asia/Shanghai' date +%M)
-          echo "北京时间: ${BJ_HOUR}:${BJ_MINUTE}"
-          # 北京时间 8:50 - 9:15 之间执行
-          if [ "$BJ_HOUR" = "08" ] && [ "$BJ_MINUTE" -ge 50 ]; then
-            echo "should_run=true" >> $GITHUB_OUTPUT
-          elif [ "$BJ_HOUR" = "09" ] && [ "$BJ_MINUTE" -le 15 ]; then
-            echo "should_run=true" >> $GITHUB_OUTPUT
-          else
+          BJ_H=$(TZ='Asia/Shanghai' date +%H)
+          BJ_M=$(TZ='Asia/Shanghai' date +%M)
+          echo "北京时间: ${BJ_H}:${BJ_M}"
+
+          # 只在 8:45 - 9:15 执行
+          IN_WINDOW=false
+          if [ "$BJ_H" = "08" ] && [ "$BJ_M" -ge 45 ]; then IN_WINDOW=true; fi
+          if [ "$BJ_H" = "09" ] && [ "$BJ_M" -le 15 ]; then IN_WINDOW=true; fi
+          if [ "$IN_WINDOW" = "false" ]; then
             echo "should_run=false" >> $GITHUB_OUTPUT
-            echo "不在时间窗口内，跳过"
+            echo "不在窗口内，跳过"
+            exit 0
           fi
+
+          # 检查 GitHub API 今天是否已有成功发送
+          TODAY=$(TZ='Asia/Shanghai' date +%Y-%m-%d)
+          LAST_RUN=$(curl -s -H "Authorization: Bearer ${{ secrets.GH_PAT }}" \
+            "https://api.github.com/repos/baidonghui1055224505-sudo/ai-digest/actions/runs?per_page=5&status=success" \
+            | python3 -c "
+  import json,sys
+  for r in json.load(sys.stdin).get('workflow_runs',[]):
+      if r.get('name','') == 'AI Builders Daily Digest':
+          print(r.get('created_at','')[:10])
+          break
+  " 2>/dev/null || echo "never")
+          echo "上次成功发送: $LAST_RUN, 今天: $TODAY"
+          if [ "$LAST_RUN" = "$TODAY" ]; then
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            echo "今天已发送过"
+          else
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "今天尚未发送，开始执行"
+          fi
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
 
       - uses: actions/checkout@v4
         if: steps.check.outputs.should_run == 'true'
@@ -42,7 +61,7 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Install dependencies
+      - name: 安装依赖
         if: steps.check.outputs.should_run == 'true'
         run: cd scripts && npm install
 
@@ -56,31 +75,31 @@ jobs:
 
           USER_FILES=$(ls ../users/*.json 2>/dev/null || echo "")
           if [ -z "$USER_FILES" ]; then
-            echo "No user configs found in users/"
+            echo "没有用户配置"
             exit 0
           fi
 
+          SENT="no"
           for USER_FILE in $USER_FILES; do
             USER_ID=$(basename "$USER_FILE" .json)
             USER_EMAIL=$(python3 -c "import json; print(json.load(open('$USER_FILE'))['email'])")
-            echo ""
-            echo "========== $USER_ID ($USER_EMAIL) =========="
+            echo ">>> $USER_ID ($USER_EMAIL)"
 
-            node prepare-digest.js --user "$USER_ID" > /tmp/feed-$USER_ID.json 2>/tmp/prep-err.txt
-            if [ $? -ne 0 ]; then
-              echo "ERROR: prepare failed"; cat /tmp/prep-err.txt; continue
-            fi
-            echo "Feed: $(wc -c < /tmp/feed-$USER_ID.json) bytes"
+            node prepare-digest.js --user "$USER_ID" > /tmp/feed-$USER_ID.json 2>/tmp/err.txt
+            if [ $? -ne 0 ]; then cat /tmp/err.txt; continue; fi
 
-            node remix-digest.js < /tmp/feed-$USER_ID.json > /tmp/digest-$USER_ID.md 2>/tmp/remix-err.txt
-            if [ $? -ne 0 ]; then
-              echo "ERROR: remix failed"; cat /tmp/remix-err.txt; continue
-            fi
-            echo "Digest: $(wc -c < /tmp/digest-$USER_ID.md) bytes"
-            head -3 /tmp/digest-$USER_ID.md
+            node remix-digest.js < /tmp/feed-$USER_ID.json > /tmp/digest-$USER_ID.md 2>/tmp/err2.txt
+            if [ $? -ne 0 ]; then cat /tmp/err2.txt; continue; fi
 
+            head -1 /tmp/digest-$USER_ID.md
             FB_DELIVERY_METHOD=email FB_DELIVERY_EMAIL="$USER_EMAIL" \
-              node deliver.js --file /tmp/digest-$USER_ID.md 2>&1
-            echo "✅ 已发送"
+              node deliver.js --file /tmp/digest-$USER_ID.md
+            echo "  [x] $USER_EMAIL"
+            SENT="yes"
           done
-          echo "========== 完成 =========="
+
+          if [ "$SENT" = "yes" ]; then
+            TODAY=$(TZ='Asia/Shanghai' date +%Y%m%d)
+            touch /tmp/digest-sent-$TODAY
+            echo "--- 完成 $(TZ='Asia/Shanghai' date) ---"
+          fi
