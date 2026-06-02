@@ -1,0 +1,32 @@
+name: Trigger Digest Manually
+on:
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install deps
+        run: cd scripts && npm install
+      - name: Send digests
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: |
+          cd scripts
+          for f in ../users/*.json; do
+            [ ! -f "$f" ] && continue
+            id=$(basename "$f" .json)
+            email=$(python3 -c "import json;print(json.load(open('$f'))['email'])")
+            echo "=== $id ($email) ==="
+            node prepare-digest.js --user "$id" > /tmp/feed.json 2>/tmp/e.txt || { cat /tmp/e.txt; continue; }
+            node remix-digest.js < /tmp/feed.json > /tmp/digest.md 2>/tmp/e2.txt || { cat /tmp/e2.txt; continue; }
+            head -1 /tmp/digest.md
+            FB_DELIVERY_METHOD=email FB_DELIVERY_EMAIL="$email" node deliver.js --file /tmp/digest.md
+            echo "[OK] $email"
+          done
