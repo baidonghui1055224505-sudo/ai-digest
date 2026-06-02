@@ -2,9 +2,14 @@ name: AI Builders Daily Digest
 
 on:
   schedule:
-    # 每15分钟检查一次北京时间，只在8:55-9:10之间执行
-    # 短间隔比单次定时更可靠，不会被延迟到下午
-    - cron: "*/15 0-2 * * *"
+    # 5个触发点分布在UTC 21:00-23:00，利用GitHub的随机延迟
+    # 延迟2-5小时后刚好落在北京时间9:00前后
+    # 配合作流内的北京时间检查，只有命中窗口的才会真正执行
+    - cron: "0 21 * * *"
+    - cron: "30 21 * * *"
+    - cron: "0 22 * * *"
+    - cron: "30 22 * * *"
+    - cron: "0 23 * * *"
   workflow_dispatch:
 
 jobs:
@@ -19,10 +24,10 @@ jobs:
           BJ_HOUR=$(TZ='Asia/Shanghai' date +%H)
           BJ_MINUTE=$(TZ='Asia/Shanghai' date +%M)
           echo "北京时间: ${BJ_HOUR}:${BJ_MINUTE}"
-          # 只在 8:55 - 9:10 之间执行
-          if [ "$BJ_HOUR" = "08" ] && [ "$BJ_MINUTE" -ge 55 ]; then
+          # 北京时间 8:50 - 9:15 之间执行
+          if [ "$BJ_HOUR" = "08" ] && [ "$BJ_MINUTE" -ge 50 ]; then
             echo "should_run=true" >> $GITHUB_OUTPUT
-          elif [ "$BJ_HOUR" = "09" ] && [ "$BJ_MINUTE" -le 10 ]; then
+          elif [ "$BJ_HOUR" = "09" ] && [ "$BJ_MINUTE" -le 15 ]; then
             echo "should_run=true" >> $GITHUB_OUTPUT
           else
             echo "should_run=false" >> $GITHUB_OUTPUT
